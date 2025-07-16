@@ -1,0 +1,3 @@
+fn program_1_5__3() {
+    return 1;
+}

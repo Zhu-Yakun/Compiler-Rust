@@ -1,0 +1,3 @@
+fn program_2_3__2() {
+    let mut b:i32=a;
+}

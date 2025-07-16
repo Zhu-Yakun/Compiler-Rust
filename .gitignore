@@ -1,0 +1,11 @@
+build
+.vscode
+# input
+output.asm
+*.pdf
+venv/
+old/
+*.cache
+*.cache.time
+
+# result/

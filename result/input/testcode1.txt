@@ -1,0 +1,42 @@
+//This is a test case
+/*Another note
+for multiple rows*/
+
+//define a single function
+fn fun1(mut x:i32)->i32{
+    let mut y:i32=3*x;
+    return y;
+}
+
+//define anothor function which calls fun1
+fn fun2(mut a:i32){
+    let mut b:i32=fun1(a);
+}
+
+//define a function which calculate the factor(calling itself)
+fn fac(mut n:i32)->i32{
+    if n<=1 {
+        return 1;
+    }
+    else{
+        return n*fac(n-1);
+    }
+}
+
+//define the main program
+fn main(){
+    let mut a:i32=5;
+    a=fac(4);
+
+    if a>30 {
+        a=30;
+    }
+    else if a>15{
+        while a>15 {
+            a=a-1;
+        }
+    }
+    else {
+        a=4;
+    }
+}

@@ -1,0 +1,77 @@
+// 基础函数声明（规则1.1）
+fn main() {
+    // 空语句（规则1.2）
+    ;
+}
+
+// 带参数的函数（规则1.4）
+fn calculate(mut a: i32) -> i32 {
+    // 变量声明（规则2.1）
+    let mut result: i32 = 0;
+    let mut temp: i32;
+    
+    // 赋值语句（规则2.2）
+    a = 10;
+    let mut b = 5;
+    
+    // 表达式运算（规则3.2）
+    result = a * b + 3;
+    temp = (a - b) / 2;
+    
+    // 返回语句（规则1.5）
+    return result;
+}
+
+// 控制流测试函数
+fn control_flow_test(mut n: i32) {
+    // 变量声明并赋值（规则2.3）
+    let mut counter: i32 = 0;
+    let mut sum = 0;
+    
+    // while循环（规则5.1）
+    while counter < n {
+        // if-else if-else结构（规则4.1, 4.2）
+        if (counter - counter / 2 * 2) == 0 {
+            sum = sum + counter;
+        } else if (counter - counter / 3 * 3) == 0 {
+            sum = sum - counter;
+        } else {
+            // 空语句块
+        }
+        
+        // 重影（规则2.1）
+        let mut counter = counter + 1;
+    }
+    
+    // 函数调用（规则3.3）
+    let final_result = calculate(sum);
+}
+
+// 主入口函数
+fn program_entry() -> i32 {
+    // 嵌套调用
+    let mut value = 7;
+    control_flow_test(value);
+    
+    // 带返回值的函数调用
+    let output = calculate(15);
+    
+    // 最终返回
+    return output + value;
+}
+
+// 错误用例（已注释，用于测试错误处理）
+/*
+fn error_case_1() {
+    return; // 应该有返回值
+}
+
+fn error_case_2() -> i32 {
+    return; // 缺少返回值
+}
+
+fn error_case_3(mut x: i32) {
+    y = 5; // 未声明变量
+}
+*/
+

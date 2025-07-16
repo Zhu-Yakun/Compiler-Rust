@@ -1,0 +1,3 @@
+fn program_1_5__2() -> i32 {
+    return ;
+}

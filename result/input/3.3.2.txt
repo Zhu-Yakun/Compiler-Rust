@@ -1,0 +1,6 @@
+fn program_3_3__2__a(mut a:i32) {
+
+}
+fn program_3_3__2__b() {
+    program_3_3__2__a(1+2);
+}
