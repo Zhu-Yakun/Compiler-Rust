@@ -385,25 +385,45 @@ void SemanticAnalyzer::handleVarDeclaration(Symbol &lhs, const std::vector<Symbo
 
 void SemanticAnalyzer::handleType(Symbol &lhs, const std::vector<Symbol> &rhs)
 {
-    // <type> ::= T_I32 | T_F32 | T_CHAR | T_BOOL
-    switch (Token::stringToTokenType(rhs[0].literal))
-    {
-    case T_F32:
-        lhs.meta.set("type", F32);
-        break;
-    case T_I32:
-        lhs.meta.set("type", I32);
-        break;
-    case T_CHAR:
-        lhs.meta.set("type", CHAR);
-        break;
-    case T_BOOL:
-        lhs.meta.set("type", BOOL);
-        break;
-    default:
-        std::cerr << "[handleType] 变量类型不存在：" << rhs[0].literal << std::endl;
+    // <type> ::= T_I32 | T_F32 | T_CHAR | T_BOOL | T_REFERENCE T_MUT <type> | T_REFERENCE <type>
+    if (rhs.size() == 1) {
+        // 基本类型
+        switch (Token::stringToTokenType(rhs[0].literal))
+        {
+        case T_F32:
+            lhs.meta.set("type", F32);
+            break;
+        case T_I32:
+            lhs.meta.set("type", I32);
+            break;
+        case T_CHAR:
+            lhs.meta.set("type", CHAR);
+            break;
+        case T_BOOL:
+            lhs.meta.set("type", BOOL);
+            break;
+        default:
+            std::cerr << "[handleType] 变量类型不存在：" << rhs[0].literal << std::endl;
+            throw std::exception();
+            break;
+        }
+    } else if (rhs.size() == 2 && Token::stringToTokenType(rhs[0].literal) == T_REFERENCE) {
+        // 不可变引用类型: &<type>
+        VariableType base_type = rhs[1].meta.get<VariableType>("type");
+        VariableType ref_type = create_reference_type(base_type, false);
+        lhs.meta.set("type", ref_type);
+        lhs.meta.set("is_reference", true);
+        lhs.meta.set("is_mutable_ref", false);
+    } else if (rhs.size() == 3 && Token::stringToTokenType(rhs[0].literal) == T_REFERENCE && Token::stringToTokenType(rhs[1].literal) == T_MUT) {
+        // 可变引用类型: &mut <type>
+        VariableType base_type = rhs[2].meta.get<VariableType>("type");
+        VariableType ref_type = create_reference_type(base_type, true);
+        lhs.meta.set("type", ref_type);
+        lhs.meta.set("is_reference", true);
+        lhs.meta.set("is_mutable_ref", true);
+    } else {
+        std::cerr << "[handleType] 规约出错" << std::endl;
         throw std::exception();
-        break;
     }
 }
 
@@ -763,7 +783,30 @@ void SemanticAnalyzer::handleVarDeclarationStmt(Symbol &lhs, const std::vector<S
         // <var_declaration_stmt> ::= T_LET <var_declaration> T_COLON <type>
         const auto &name = rhs[1].meta.get<std::string>("name");
         const auto &type = rhs[3].meta.get<VariableType>("type");
-        variable_table.add_item(name, type, rhs[1].meta.get<bool>("is_mut"), false, variable_deep);
+        
+        // 检查是否是引用类型
+        bool is_reference = rhs[3].meta.contains("is_reference") ? rhs[3].meta.get<bool>("is_reference") : is_reference_type(type);
+        bool is_mutable_ref = rhs[3].meta.contains("is_mutable_ref") ? rhs[3].meta.get<bool>("is_mutable_ref") : is_mutable_reference_type(type);
+        
+        // 添加变量到符号表
+        // 如果是引用类型，记录其目标，供借用检查
+        std::string ref_target = (is_reference && rhs[3].meta.contains("ref_target")) ? rhs[3].meta.get<std::string>("ref_target") : std::string();
+
+        // 借用规则：
+        if (is_reference) {
+            if (is_mutable_ref) {
+                if (variable_table.has_any_ref_to(ref_target)) {
+                    std::cerr << "[borrow-check] 已存在对 '" << ref_target << "' 的引用，不能再创建可变引用变量 '" << name << "'" << std::endl;
+                    throw std::exception();
+                }
+            } else {
+                if (variable_table.has_mut_ref_to(ref_target)) {
+                    std::cerr << "[borrow-check] 已存在对 '" << ref_target << "' 的可变引用，不能再创建不可变引用变量 '" << name << "'" << std::endl;
+                    throw std::exception();
+                }
+            }
+        }
+        variable_table.add_item(name, type, rhs[1].meta.get<bool>("is_mut"), false, variable_deep, -1, is_reference, is_mutable_ref, ref_target);
     }
     else if (rhs.size() == 2) // 允许遮蔽
     {
@@ -805,7 +848,7 @@ void SemanticAnalyzer::handleAssignmentStmt(Symbol &lhs, const std::vector<Symbo
     const VariableType &type2 = rhs[2].meta.get<VariableType>("type");
     if (type2 != type1)
     {
-        std::cerr << "[handleAssignmentStmt] 变量 " << name << " 的类型为 " << type1 << "，但被赋值为 " << type2 << std::endl;
+        std::cerr << "[handleAssignmentStmt] 变量 " << name << " 的类型为 " << to_string(type1) << "，但被赋值为 " << to_string(type2) << std::endl;
         throw std::exception();
     }
 
@@ -815,6 +858,14 @@ void SemanticAnalyzer::handleAssignmentStmt(Symbol &lhs, const std::vector<Symbo
         std::cerr << "[handleAssignmentStmt] 变量 " << name << " 是不可变变量，不能赋值" << std::endl;
         throw std::exception();
     }
+    
+    // 检查是否是引用类型，如果是引用类型，需要检查是否是可变引用
+    if (item->is_reference && !item->is_mutable_ref)
+    {
+        std::cerr << "[handleAssignmentStmt] 变量 " << name << " 是不可变引用，不能通过它修改值" << std::endl;
+        throw std::exception();
+    }
+    
     item->is_initial = true;
 
     lhs.meta.set("value", name);
@@ -849,7 +900,27 @@ void SemanticAnalyzer::handleVarDeclarationAssignmentStmt(Symbol &lhs, const std
             std::cerr << "[handleVarDeclarationAssignmentStmt] 不可以将无返回值赋值给变量 " << name << std::endl;
             throw std::exception();
         }
-        variable_table.add_item(name, type, rhs[1].meta.get<bool>("is_mut"), true, variable_deep);
+        
+        // 检查是否是引用类型
+        bool is_reference = rhs[3].meta.contains("is_reference") ? rhs[3].meta.get<bool>("is_reference") : is_reference_type(type);
+        bool is_mutable_ref = rhs[3].meta.contains("is_mutable_ref") ? rhs[3].meta.get<bool>("is_mutable_ref") : is_mutable_reference_type(type);
+        
+        std::string ref_target = (is_reference && rhs[3].meta.contains("ref_target")) ? rhs[3].meta.get<std::string>("ref_target") : std::string();
+
+        if (is_reference) {
+            if (is_mutable_ref) {
+                if (variable_table.has_any_ref_to(ref_target)) {
+                    std::cerr << "[borrow-check] 已存在对 '" << ref_target << "' 的引用，不能再创建可变引用变量 '" << name << "'" << std::endl;
+                    throw std::exception();
+                }
+            } else {
+                if (variable_table.has_mut_ref_to(ref_target)) {
+                    std::cerr << "[borrow-check] 已存在对 '" << ref_target << "' 的可变引用，不能再创建不可变引用变量 '" << name << "'" << std::endl;
+                    throw std::exception();
+                }
+            }
+        }
+        variable_table.add_item(name, type, rhs[1].meta.get<bool>("is_mut"), true, variable_deep, -1, is_reference, is_mutable_ref, ref_target);
         const auto &value = rhs[3].meta.get<std::string>("value");
 
         QuaterList quat;
@@ -876,8 +947,21 @@ void SemanticAnalyzer::handleVarDeclarationAssignmentStmt(Symbol &lhs, const std
             std::cerr << "[handleVarDeclarationAssignmentStmt] 不可以将无返回值赋值给变量 " << name << std::endl;
             throw std::exception();
         }
+        
+        // 检查是否是引用类型
+        bool is_reference = false;
+        bool is_mutable_ref = false;
+        if (rhs[3].meta.contains("is_reference")) {
+            is_reference = rhs[3].meta.get<bool>("is_reference");
+            if (rhs[3].meta.contains("is_mutable_ref")) {
+                is_mutable_ref = rhs[3].meta.get<bool>("is_mutable_ref");
+            }
+        }
 
-        variable_table.add_item(name, type1, rhs[1].meta.get<bool>("is_mut"), true, variable_deep);
+        std::string ref_target;
+        if (is_reference && rhs[3].meta.contains("ref_target"))
+            ref_target = rhs[3].meta.get<std::string>("ref_target");
+        variable_table.add_item(name, type1, rhs[1].meta.get<bool>("is_mut"), true, variable_deep, -1, is_reference, is_mutable_ref, ref_target);
         const auto &value = rhs[5].meta.get<std::string>("value");
 
         QuaterList quat;
@@ -1056,11 +1140,131 @@ void SemanticAnalyzer::handleTerm(Symbol &lhs, const std::vector<Symbol> &rhs)
 
 void SemanticAnalyzer::handleFactor(Symbol &lhs, const std::vector<Symbol> &rhs)
 {
-    // <factor> ::= <element>
-    lhs.meta.set("type", rhs[0].meta.get<VariableType>("type"));
-    lhs.meta.set("value", rhs[0].meta.get<std::string>("value"));
-    if (rhs[0].meta.contains("quat"))
-        lhs.meta.set("quat", rhs[0].meta.get<QuaterList>("quat"));
+    // <factor> ::= <element> | T_MULTIPLY <factor> | T_REFERENCE T_MUT <factor> | T_REFERENCE <factor>
+    if (rhs.size() == 1) {
+        // <factor> ::= <element>
+        lhs.meta.set("type", rhs[0].meta.get<VariableType>("type"));
+        lhs.meta.set("value", rhs[0].meta.get<std::string>("value"));
+        if (rhs[0].meta.contains("quat"))
+            lhs.meta.set("quat", rhs[0].meta.get<QuaterList>("quat"));
+    } else if (rhs.size() == 2 && Token::stringToTokenType(rhs[0].literal) == T_MULTIPLY) {
+        // <factor> ::= T_MULTIPLY <factor> 解引用操作
+        QuaterList quat;
+        if (rhs[1].meta.contains("quat"))
+            quat.append_quaters(rhs[1].meta.get<QuaterList>("quat"));
+        
+        // 获取被解引用的值
+        std::string ref_value = rhs[1].meta.get<std::string>("value");
+        VariableType ref_type = rhs[1].meta.get<VariableType>("type");
+        
+        // 检查是否为引用类型
+        if (!is_reference_type(ref_type)) {
+            std::cerr << "[handleFactor] 解引用操作只能用于引用类型，当前类型：" << to_string(ref_type) << std::endl;
+            throw std::exception();
+        }
+        
+        // 获取引用的基础类型
+        VariableType base_type = get_base_type(ref_type);
+        
+        // 创建临时变量存储解引用结果
+        std::string deref_value = getNewTemp();
+        
+        // 添加解引用四元式
+        quat.add_quater("deref", ref_value, "", deref_value, variable_table);
+        
+        // 设置结果类型和值
+        lhs.meta.set("type", base_type);
+        lhs.meta.set("value", deref_value);
+        lhs.meta.set("quat", quat);
+    } else if (rhs.size() == 2 && Token::stringToTokenType(rhs[0].literal) == T_REFERENCE) {
+        // <factor> ::= T_REFERENCE <factor> 不可变引用
+        QuaterList quat;
+        if (rhs[1].meta.contains("quat"))
+            quat.append_quaters(rhs[1].meta.get<QuaterList>("quat"));
+        
+        // 获取被引用的值
+        std::string value = rhs[1].meta.get<std::string>("value");
+        VariableType type = rhs[1].meta.get<VariableType>("type");
+        
+        // 检查变量是否存在
+        auto var_opt = variable_table.lookup(value);
+        if (!var_opt.has_value()) {
+            std::cerr << "[handleFactor] 未定义变量：" << value << std::endl;
+            throw std::exception();
+        }
+
+        // 借用检查：存在可变引用时，不允许创建新的不可变引用
+        if (variable_table.has_mut_ref_to(value)) {
+            std::cerr << "[borrow-check] 存在指向 '" << value << "' 的可变引用，不能再创建不可变引用" << std::endl;
+            throw std::exception();
+        }
+        
+        // 创建引用类型
+        VariableType ref_type = create_reference_type(type, false);
+        
+        // 创建临时变量存储引用
+        std::string ref_value = getNewTemp();
+        
+        // 添加引用四元式
+        quat.add_quater("ref", value, "", ref_value, variable_table);
+        
+        // 设置结果类型和值，同时记录引用目标与引用属性，供声明阶段写入变量表
+        lhs.meta.set("type", ref_type);
+        lhs.meta.set("value", ref_value);
+        lhs.meta.set("quat", quat);
+        lhs.meta.set("ref_target", value);
+        lhs.meta.set("is_reference", true);
+        lhs.meta.set("is_mutable_ref", false);
+    } else if (rhs.size() == 3 && Token::stringToTokenType(rhs[0].literal) == T_REFERENCE && Token::stringToTokenType(rhs[1].literal) == T_MUT) {
+        // <factor> ::= T_REFERENCE T_MUT <factor> 可变引用
+        QuaterList quat;
+        if (rhs[2].meta.contains("quat"))
+            quat.append_quaters(rhs[2].meta.get<QuaterList>("quat"));
+        
+        // 获取被引用的值
+        std::string value = rhs[2].meta.get<std::string>("value");
+        VariableType type = rhs[2].meta.get<VariableType>("type");
+        
+        // 检查变量是否存在
+        auto var_opt = variable_table.lookup(value);
+        if (!var_opt.has_value()) {
+            std::cerr << "[handleFactor] 未定义变量：" << value << std::endl;
+            throw std::exception();
+        }
+        
+        // 检查变量是否可变
+        if (!var_opt->is_mut) {
+            std::cerr << "[handleFactor] 不能创建不可变变量的可变引用：" << value << std::endl;
+            throw std::exception();
+        }
+
+        // 借用检查：存在任何引用时，不允许再创建可变引用；存在一个可变引用时，不允许再创建新的引用
+        if (variable_table.has_any_ref_to(value)) {
+            std::cerr << "[borrow-check] 已存在指向 '" << value << "' 的引用，不能再创建可变引用" << std::endl;
+            throw std::exception();
+        }
+        
+        // 创建引用类型
+        VariableType ref_type = create_reference_type(type, true);
+        
+        // 创建临时变量存储引用
+        std::string ref_value = getNewTemp();
+        
+        // 添加引用四元式
+        quat.add_quater("ref_mut", value, "", ref_value, variable_table);
+        
+        // 设置结果类型和值，同时记录引用目标与引用属性，供声明阶段写入变量表
+        lhs.meta.set("type", ref_type);
+        lhs.meta.set("value", ref_value);
+        lhs.meta.set("quat", quat);
+        lhs.meta.set("ref_target", value);
+        lhs.meta.set("is_reference", true);
+        lhs.meta.set("is_mutable_ref", true);
+    } else {
+        std::cerr << "[handleFactor] 规约出错" << std::endl;
+        throw std::exception();
+    }
+    
     if (!lhs.meta.contains("code")) {
         lhs.meta.set("code", CodeList{});
     }

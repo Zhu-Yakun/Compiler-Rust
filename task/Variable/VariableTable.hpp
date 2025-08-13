@@ -25,7 +25,9 @@ public:
     }
 
     bool add_item(const std::string &name, VariableType type, const bool is_mut,
-                  const bool is_initial, const size_t &deep, int param = -1)
+                  const bool is_initial, const size_t &deep, int param = -1,
+                  bool is_reference = false, bool is_mutable_ref = false,
+                  const std::string &ref_target = "")
     {
         size_t offset = 0;
         size_t length = 4;
@@ -67,7 +69,7 @@ public:
                 break;
         }
 
-        Variable new_item(name, type, deep, is_mut, is_initial, param, length, offset);
+        Variable new_item(name, type, deep, is_mut, is_initial, param, length, offset, is_reference, is_mutable_ref, ref_target);
 
         if (index == variables.size())
         {
@@ -90,6 +92,28 @@ public:
             }
         }
         return std::nullopt;
+    }
+
+    // 借用检查：是否存在任何指向 target 的引用
+    bool has_any_ref_to(const std::string &target) const
+    {
+        for (const auto &v : variables)
+        {
+            if (v.is_reference && v.ref_target == target)
+                return true;
+        }
+        return false;
+    }
+
+    // 借用检查：是否存在可变引用指向 target
+    bool has_mut_ref_to(const std::string &target) const
+    {
+        for (const auto &v : variables)
+        {
+            if (v.is_reference && v.is_mutable_ref && v.ref_target == target)
+                return true;
+        }
+        return false;
     }
 
     void debug_print() const {

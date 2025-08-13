@@ -1,0 +1,4 @@
+fn program_6_1__1() {
+ let a:i32=1;
+ let b=2;
+}

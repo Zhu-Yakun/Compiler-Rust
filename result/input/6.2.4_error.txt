@@ -1,0 +1,5 @@
+fn program_6_2__4() {
+ let mut a:i32=1;
+ let b=&a;
+ let mut c=&mut a;
+}

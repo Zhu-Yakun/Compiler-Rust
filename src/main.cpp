@@ -11,7 +11,7 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    std::string grammarFile = "grammar/grammar.txt";
+    std::string grammarFile = "grammar/grammar_updated.txt";
     std::string inputFile = argv[1];
     std::string outputFile = argv[2];
     bool show_output = argc == 4;
