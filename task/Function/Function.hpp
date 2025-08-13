@@ -5,6 +5,7 @@
 #include <utility>
 #include <vector>
 #include "Variable/Variable.hpp"
+#include "MipsInstructionGenerator/CodeList.hpp"
 
 /**
  * 函数

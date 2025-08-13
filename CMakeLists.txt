@@ -25,6 +25,9 @@ add_library(core STATIC
         task/common/MetaData.cpp
         task/Variable/Variable.cpp
         task/Variable/VariableType.cpp
+        task/MipsInstructionGenerator/MipsInstructionGenerator.cpp
+        task/MipsInstructionGenerator/RegisterManager.cpp
+        task/MipsInstructionGenerator/StackManager.cpp
 )
 
 # target_include_directories(core PUBLIC include)

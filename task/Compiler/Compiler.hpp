@@ -10,11 +10,13 @@ namespace fs = std::filesystem;
 class Compiler
 {
 public:
-    explicit Compiler(const std::string &grammar_file_path, const std::string &input_file_path, bool show_output);
+    explicit Compiler(const std::string &grammar_file_path, const std::string &input_file_path, std::string output_file_path, bool show_output);
 
     void compile();
 
 private:
+    std::string output_file_path;
+
     Lexer lexer;
     LR1Parser parser;
     SemanticAnalyzer semanticAnalyzer;

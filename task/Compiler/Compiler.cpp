@@ -2,8 +2,11 @@
 
 #include <utility>
 
-Compiler::Compiler(const std::string &grammar_file_path, const std::string &input_file_path, bool show_output)
-    : show_output(show_output), semanticAnalyzer(show_output)
+static int lastGotoState = -1;
+static Symbol lastGotoLhs;
+
+Compiler::Compiler(const std::string &grammar_file_path, const std::string &input_file_path, std::string output_file_path, bool show_output)
+    : output_file_path(std::move(output_file_path)), show_output(show_output), semanticAnalyzer(show_output)
 {
     /* 设置输入文件 */
     std::ifstream file(input_file_path);
@@ -76,6 +79,7 @@ void Compiler::compile()
 {
     try
     {
+        // parser.print_tables();
         parser.stateStack.push(0); // 初始化状态栈，压入初始状态 0（文法分析入口）
         Token token;               // 定义 token 用于读取词法分析器返回的结果
         do
@@ -102,32 +106,74 @@ void Compiler::compile()
                 }
                 case Action::Type::REDUCE: // 如果是 REDUCE（规约），从栈中弹出产生式右侧符号，组成 RHS
                 {
-                    std::vector<Symbol> rhs;
-                    Symbol lhs = action.production.lhs;
+                    try {
+                        // std::cerr << "[reduce] 规约前: stateStack.size=" << parser.stateStack.size()
+                        //           << ", symbolStack.size=" << parser.symbolStack.size()
+                        //           << ", lhs=" << action.production.lhs.to_string()
+                        //           << ", rhs.size=" << action.production.rhs.size() << std::endl;
+                        std::vector<Symbol> rhs;
+                        Symbol lhs = action.production.lhs;
 
-                    for (size_t i = 0; i < action.production.rhs.size(); ++i)
-                    {
-                        rhs.insert(rhs.begin(), parser.symbolStack.top()); // 将栈顶符号插入 RHS
-                        parser.symbolStack.pop();                          // 弹出符号栈
-                        parser.stateStack.pop();                           // 弹出状态栈
+                        for (size_t i = 0; i < action.production.rhs.size(); ++i)
+                        {
+                            rhs.insert(rhs.begin(), parser.symbolStack.top()); // 将栈顶符号插入 RHS
+                            parser.symbolStack.pop();                          // 弹出符号栈
+                            parser.stateStack.pop();                           // 弹出状态栈
+                        }
+                        // std::cerr << "[reduce] 弹栈后: stateStack.size=" << parser.stateStack.size()
+                        //           << ", symbolStack.size=" << parser.symbolStack.size() << std::endl;
+
+                        semanticAnalyzer.doSemanticAction(lhs, rhs); // 执行对应语义动作（如生成中间代码）
+
+                        parser.symbolStack.push(lhs); // 将规约后的非终结符压回符号栈
+                        // std::cerr << "[reduce] lhs入栈后: symbolStack.size=" << parser.symbolStack.size() << std::endl;
+
+                        // // 检查是否规约到文法入口且输入为EOF，直接ACCEPT
+                        // if (lhs.literal == "<Program>" && currentSymbol.type == SymbolType::Terminal && currentSymbol.literal == "T_EOF") {
+                        //     std::cout << "[ACCEPT] 规约到文法入口 <Program> 且输入为EOF，分析成功！" << std::endl;
+                        //     // 输出全局四元式和中间代码
+                        //     QuaterList global_quaters = semanticAnalyzer.get_global_quater_list();
+                        //     std::cout << "四元式列表长度：" << global_quaters.size() << std::endl;
+                        //     std::cout << "===== 全局四元式列表 =====" << std::endl;
+                        //     global_quaters.display();
+                        //     CodeList finalCode = semanticAnalyzer.getFinalCode();
+                        //     finalCode.display(output_file_path, show_output);
+                        //     std::cout << "成功" << std::endl;
+                        //     return;
+                        // }
+
+                        int nextState = parser.gotoTable.at({parser.stateStack.top(), action.production.lhs}); // 查表获得下一个状态，并压入状态栈
+                        parser.stateStack.push(nextState);
+                        // std::cerr << "[reduce] goto后: stateStack.size=" << parser.stateStack.size() << ", 压入新状态: " << nextState << std::endl;
+                        shouldContinue = true; // 规约后继续 while 循环，支持连续规约
+                        break;
+                    } catch (const std::exception& e) {
+                        std::cerr << "[REDUCE][EXCEPTION] what(): " << e.what() << std::endl;
+                        std::cerr << "[REDUCE][EXCEPTION] stateStack.size=" << parser.stateStack.size() << ", symbolStack.size=" << parser.symbolStack.size() << std::endl;
+                        // return; // 直接终止编译，防止后续查表
                     }
-                    semanticAnalyzer.doSemanticAction(lhs, rhs); // 执行对应语义动作（如生成中间代码）
-
-                    parser.symbolStack.push(lhs); // 将规约后的非终结符压回符号栈
-
-                    int nextState = parser.gotoTable.at({parser.stateStack.top(), action.production.lhs}); // 查表获得下一个状态，并压入状态栈
-                    parser.stateStack.push(nextState);
-                    break;
                 }
                 case Action::Type::ACCEPT: // 接受状态：编译成功
                 {
-                    // 获取并输出全局四元式
-                    QuaterList global_quaters = semanticAnalyzer.get_global_quater_list();
-                    std::cout << "四元式列表长度：" << global_quaters.size() << std::endl;
-                    std::cout << "===== 全局四元式列表 =====" << std::endl;
-                    global_quaters.display();
+                    // 在接受状态时，检查所有控制流语句是否合法
+                    try {
+                        // 检查所有 break/continue 语句是否在循环内
+                        semanticAnalyzer.checkControlFlowStatements();
+                        
+                        // 获取并输出全局四元式
+                        QuaterList global_quaters = semanticAnalyzer.get_global_quater_list();
+                        std::cout << "四元式列表长度：" << global_quaters.size() << std::endl;
+                        std::cout << "===== 全局四元式列表 =====" << std::endl;
+                        global_quaters.display();
 
-                    std::cout << "成功" << std::endl;
+                        CodeList finalCode = semanticAnalyzer.getFinalCode();
+                        finalCode.display(output_file_path, show_output); // 输出最终中间代码到文件
+
+                        std::cout << "成功" << std::endl;
+                    } catch (const std::exception& e) {
+                        std::cerr << "[ACCEPT][EXCEPTION] 控制流语句检查失败: " << e.what() << std::endl;
+                        std::cerr << "编译失败" << std::endl;
+                    }
                     return;
                 }
                 default: // 遇到非法动作，说明语法错误
@@ -140,8 +186,16 @@ void Compiler::compile()
             }
         } while (token.type != T_EOF);
     }
+    catch (const std::exception& e)
+    {
+        std::cerr << "[catch] 最后查找失败的gotoTable key: state=" << lastGotoState << ", lhs=" << lastGotoLhs.to_string() << std::endl;
+        std::cerr << "[Compiler::compile] 捕获到std::exception: " << e.what() << std::endl;
+        std::cerr << "编译失败" << std::endl;
+        std::cerr << lexer.getCurrentRowCol() << std::endl;
+    }
     catch (...)
     {
+        std::cerr << "[Compiler::compile] 捕获到未知异常。" << std::endl;
         std::cerr << "编译失败" << std::endl;
         std::cerr << lexer.getCurrentRowCol() << std::endl;
     }

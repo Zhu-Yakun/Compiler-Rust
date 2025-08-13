@@ -92,5 +92,18 @@ public:
         return std::nullopt;
     }
 
+    void debug_print() const {
+        std::cerr << "[VariableTable] 当前变量表: [";
+        for (const auto& v : variables) {
+            std::cerr << "{ name: " << v.name
+                      << ", type: " << v.type
+                      << ", deep: " << v.deep
+                      << ", is_mut: " << v.is_mut
+                      << ", is_initial: " << v.is_initial
+                      << " }, ";
+        }
+        std::cerr << "]" << std::endl;
+    }
+
 private:
 };

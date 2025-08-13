@@ -331,6 +331,10 @@ void LR1Parser::construct_tables()
 
     for (size_t index = 0; index < lr1ItemSets.size(); ++index)
     {
+        // std::cout << "==== LR1项目集 index=" << index << " ====" << std::endl;
+        // for (const auto& item : lr1ItemSets[index]) {
+        //     std::cout << item.to_string() << std::endl;
+        // }
         std::vector<LR1Item> shift_items, reduce_items, accept_items, goto_items;
         std::vector<Symbol> VT_shift, VN_goto;
         // std::cout << index << '\n';
@@ -447,7 +451,7 @@ bool LR1Parser::parse(const std::vector<Symbol> &sentence)
                 symbolStack.push(action.production.lhs);
 
                 // 更新状态栈
-                int nextState = gotoTable.at({stateStack.top(), action.production.lhs});
+                int nextState = gotoTable.at({static_cast<int>(stateStack.top()), action.production.lhs});
                 stateStack.push(nextState);
                 break;
             }

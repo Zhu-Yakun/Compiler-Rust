@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <string>
 #include <iostream>
+#include <vector> // Added for keys() method
 
 class MetaData
 {
@@ -37,6 +38,15 @@ public:
     [[nodiscard]] bool contains(const std::string &key) const
     {
         return data.find(key) != data.end();
+    }
+
+    // 返回所有 key
+    std::vector<std::string> keys() const {
+        std::vector<std::string> result;
+        for (const auto& kv : data) {
+            result.push_back(kv.first);
+        }
+        return result;
     }
 };
 
